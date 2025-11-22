@@ -13,9 +13,14 @@ export interface User {
 
 export interface Patient extends User {
   caregiverId?: string;
+  age: number;
+  condition: string;
+  cognitiveScore: number;
+  lastVisit: string;
+  status?: 'active' | 'inactive' | 'needs-attention';
 }
 
-export interface Caregiver extends User {}
+export interface Caregiver extends User { }
 
 export interface ConnectionRequest {
   id: string;
@@ -26,12 +31,26 @@ export interface ConnectionRequest {
   timestamp: string;
 }
 
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  patientId: string;
+  category: 'medication' | 'exercise' | 'mental' | 'social' | 'diet';
+  priority: 'low' | 'medium' | 'high';
+  points: number;
+  dueDate: string;
+  completed: boolean;
+  assignedBy: string;
+}
+
 // ------------------ DataService ------------------
 
 export class DataService {
   private patients: Patient[] = [];
   private caregivers: Caregiver[] = [];
   private connectionRequests: ConnectionRequest[] = [];
+  private tasks: Task[] = [];
 
   constructor() {
     this.loadAll();
@@ -43,10 +62,12 @@ export class DataService {
     const savedPatients = localStorage.getItem('patients');
     const savedCaregivers = localStorage.getItem('caregivers');
     const savedRequests = localStorage.getItem('connectionRequests');
+    const savedTasks = localStorage.getItem('tasks');
 
     this.patients = savedPatients ? JSON.parse(savedPatients) : [];
     this.caregivers = savedCaregivers ? JSON.parse(savedCaregivers) : [];
     this.connectionRequests = savedRequests ? JSON.parse(savedRequests) : [];
+    this.tasks = savedTasks ? JSON.parse(savedTasks) : [];
   }
 
   private savePatients() {
@@ -59,6 +80,10 @@ export class DataService {
 
   private saveRequests() {
     localStorage.setItem('connectionRequests', JSON.stringify(this.connectionRequests));
+  }
+
+  private saveTasks() {
+    localStorage.setItem('tasks', JSON.stringify(this.tasks));
   }
 
   // ------------ USERS ----------------
@@ -193,4 +218,134 @@ export class DataService {
       }
     }
   }
+
+  // ------------ TASKS ----------------
+
+  assignTask(taskData: Omit<Task, 'id'>): Task {
+    const newTask: Task = {
+      id: uuidv4(),
+      ...taskData
+    };
+    this.tasks.push(newTask);
+    this.saveTasks();
+    return newTask;
+  }
+
+  getTasksForPatient(patientId: string): Task[] {
+    return this.tasks.filter(t => t.patientId === patientId);
+  }
+
+  completeTask(taskId: string) {
+    const task = this.tasks.find(t => t.id === taskId);
+    if (task) {
+      task.completed = true;
+      this.saveTasks();
+    }
+  }
+
+  toggleTaskCompletion(taskId: string) {
+    const task = this.tasks.find(t => t.id === taskId);
+    if (task) {
+      task.completed = !task.completed;
+      this.saveTasks();
+    }
+  }
+
+  // ------------ HELPER METHODS ----------------
+
+  getPatientsForCaregiver(caregiverId: string): Patient[] {
+    return this.patients.filter(p => p.caregiverId === caregiverId);
+  }
+
+  getPatientDashboardStats(patientId: string) {
+    const tasks = this.getTasksForPatient(patientId);
+    const completedTasks = tasks.filter(t => t.completed);
+    const totalPoints = completedTasks.reduce((sum, t) => sum + t.points, 0);
+    const completionRate = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
+
+    return {
+      points: totalPoints,
+      totalPoints: totalPoints,
+      level: Math.floor(totalPoints / 500) + 1,
+      streak: 3, // Mock value
+      completionRate
+    };
+  }
+
+  getPendingRequests(patientId: string): ConnectionRequest[] {
+    return this.getPendingRequestsForPatient(patientId);
+  }
+
+  respondToRequest(requestId: string, accept: boolean) {
+    this.updateRequestStatus(requestId, accept ? 'accepted' : 'rejected');
+  }
+
+  getCaregiverDashboardStats(caregiverId: string) {
+    const patients = this.getPatientsForCaregiver(caregiverId);
+    const allTasks = patients.flatMap(p => this.getTasksForPatient(p.id));
+    const completedTasks = allTasks.filter(t => t.completed);
+    const activeTasks = allTasks.filter(t => !t.completed);
+
+    const avgCognitiveScore = patients.length > 0
+      ? Math.round(patients.reduce((sum, p) => sum + p.cognitiveScore, 0) / patients.length)
+      : 0;
+
+    const completionRate = allTasks.length > 0
+      ? Math.round((completedTasks.length / allTasks.length) * 100)
+      : 0;
+
+    return {
+      totalPatients: patients.length,
+      activeTasks: activeTasks.length,
+      completionRate,
+      avgCognitiveScore
+    };
+  }
+
+  getRecentActivities(caregiverId: string) {
+    // Mock recent activities - in a real app, this would fetch from a database
+    const patients = this.getPatientsForCaregiver(caregiverId);
+    const activities: any[] = [];
+
+    // Get recent completed tasks
+    patients.forEach(patient => {
+      const tasks = this.getTasksForPatient(patient.id);
+      const completedTasks = tasks.filter(t => t.completed).slice(0, 2);
+
+      completedTasks.forEach(task => {
+        activities.push({
+          id: uuidv4(),
+          type: 'task',
+          title: `${patient.name} completed "${task.title}"`,
+          score: task.points,
+          timestamp: new Date().toISOString()
+        });
+      });
+    });
+
+    return activities.slice(0, 5); // Return latest 5 activities
+  }
+
+  getPatientActivities(patientId: string) {
+    // Mock patient activities - would fetch from database in real app
+    const tasks = this.getTasksForPatient(patientId);
+    const completedTasks = tasks.filter(t => t.completed);
+
+    return completedTasks.map(task => ({
+      id: task.id,
+      type: 'task',
+      title: `Completed "${task.title}"`,
+      score: task.points,
+      timestamp: new Date().toISOString()
+    }));
+  }
+
+  saveGameResult(patientId: string, gameId: string, score: number, gameName: string) {
+    // Mock saving game result - would save to database in real app
+    console.log(`Game result saved: Patient ${patientId} scored ${score} in ${gameName}`);
+    // In a real app, this would save to a gameResults collection
+  }
 }
+
+// Export a singleton instance
+export const dataService = new DataService();

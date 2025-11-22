@@ -1,95 +1,134 @@
 import React, { useState, useEffect } from 'react';
 import Navigation from '../../components/common/Navigation';
 import { Search, Plus, MoreVertical, Phone, Mail, Calendar, Activity, X, Link, UserPlus, Loader2 } from 'lucide-react';
-import { dataService } from '../../services/mockDataService';
-import type { Patient } from '../../services/mockDataService';
+import { useAuth } from '../../contexts/AuthContext';
+import { isCaregiverUser, isPatientUser } from '../../types/user';
+import type { PatientUser } from '../../types/user';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import './Patients.css';
 
 const Patients: React.FC = () => {
-    const [patients, setPatients] = useState<Patient[]>([]);
+    const { currentUser, sendCaregiverRequest, addPatient } = useAuth();
+    const [patients, setPatients] = useState<PatientUser[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [showConnectModal, setShowConnectModal] = useState(false);
+    const [showAddPatientModal, setShowAddPatientModal] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [connectionMethod, setConnectionMethod] = useState<'code' | 'add'>('code');
 
-    // Connection Form State
-    const [patientEmail, setPatientEmail] = useState('');
+    // Connection Form State (for existing patients)
+    const [patientCode, setPatientCode] = useState('');
     const [connectionStatus, setConnectionStatus] = useState<{ success: boolean, message: string } | null>(null);
-    const [foundPatient, setFoundPatient] = useState<Patient | null>(null);
+
+    // Add Patient Form State (for new patients)
+    const [newPatientData, setNewPatientData] = useState({
+        name: '',
+        email: '',
+        condition: '',
+        age: 0
+    });
 
     useEffect(() => {
         loadPatients();
-    }, []);
+    }, [currentUser]);
 
-    const loadPatients = () => {
-        const data = dataService.getPatientsForCaregiver('c1');
-        setPatients(data);
-    };
+    const loadPatients = async () => {
+        if (!currentUser || !isCaregiverUser(currentUser)) return;
 
-    const handleSearchPatient = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!patientEmail.trim()) return;
-        
-        setIsLoading(true);
-        setConnectionStatus(null);
-        
         try {
-            // In a real app, this would be an API call to search for a patient by email
-            const patient = dataService.findPatientByEmail(patientEmail);
-            
-            if (patient) {
-                setFoundPatient(patient);
-                setConnectionStatus({ 
-                    success: true, 
-                    message: 'Patient found! Send a connection request.' 
-                });
-            } else {
-                setFoundPatient(null);
-                setConnectionStatus({ 
-                    success: false, 
-                    message: 'No patient found with that email.' 
+            // Get all patients connected to this caregiver
+            const patientIds = currentUser.patients || [];
+
+            if (patientIds.length === 0) {
+                setPatients([]);
+                return;
+            }
+
+            // Fetch patient details from Firestore
+            const patientsData: PatientUser[] = [];
+            for (const patientId of patientIds) {
+                const q = query(collection(db, 'users'), where('__name__', '==', patientId));
+                const querySnapshot = await getDocs(q);
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.role === 'patient') {
+                        patientsData.push({
+                            id: doc.id,
+                            ...data,
+                            createdAt: data.createdAt?.toDate() || new Date(),
+                            updatedAt: data.updatedAt?.toDate() || new Date(),
+                            lastVisit: data.lastVisit?.toDate() || new Date()
+                        } as PatientUser);
+                    }
                 });
             }
+
+            setPatients(patientsData);
         } catch (error) {
-            console.error('Error searching for patient:', error);
-            setConnectionStatus({ 
-                success: false, 
-                message: 'An error occurred while searching for the patient.' 
+            console.error('Error loading patients:', error);
+        }
+    };
+
+    const handleConnectByCode = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!patientCode.trim() || !currentUser) return;
+
+        setIsLoading(true);
+        setConnectionStatus(null);
+
+        try {
+            await sendCaregiverRequest(patientCode.trim());
+            setConnectionStatus({
+                success: true,
+                message: 'Connection request sent! Waiting for patient approval.'
+            });
+
+            setTimeout(() => {
+                setShowConnectModal(false);
+                setPatientCode('');
+                setConnectionStatus(null);
+            }, 2000);
+        } catch (error: any) {
+            console.error('Error sending connection request:', error);
+            setConnectionStatus({
+                success: false,
+                message: error.message || 'Failed to send connection request.'
             });
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleSendRequest = async () => {
-        if (!foundPatient) return;
-        
+    const handleAddNewPatient = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!currentUser) return;
+
         setIsLoading(true);
-        
+        setConnectionStatus(null);
+
         try {
-            // In a real app, this would be an API call to send a connection request
-            const result = dataService.sendConnectionRequestByEmail(
-                'c1', // Current caregiver ID (Sarah)
-                'Sarah (Caregiver)', // Caregiver name
-                patientEmail
-            );
-            
-            setConnectionStatus(result);
-            
-            if (result.success) {
-                setTimeout(() => {
-                    setShowConnectModal(false);
-                    setPatientEmail('');
-                    setConnectionStatus(null);
-                    setFoundPatient(null);
-                    // Refresh patient list
-                    loadPatients();
-                }, 2000);
-            }
-        } catch (error) {
-            console.error('Error sending connection request:', error);
-            setConnectionStatus({ 
-                success: false, 
-                message: 'Failed to send connection request. Please try again.' 
+            const newPatient = await addPatient(newPatientData);
+
+            setConnectionStatus({
+                success: true,
+                message: `Patient ${newPatient.name} added successfully!`
+            });
+
+            // Refresh patient list
+            await loadPatients();
+
+            setTimeout(() => {
+                setShowAddPatientModal(false);
+                setNewPatientData({ name: '', email: '', condition: '', age: 0 });
+                setConnectionStatus(null);
+            }, 2000);
+        } catch (error: any) {
+            console.error('Error adding patient:', error);
+            setConnectionStatus({
+                success: false,
+                message: error.message || 'Failed to add patient.'
             });
         } finally {
             setIsLoading(false);
@@ -181,124 +220,6 @@ const Patients: React.FC = () => {
                 </div>
 
                 {/* Connect Patient Modal */}
-                {showConnectModal && (
-                    <div className="modal-overlay">
-                        <div className="modal-content">
-                            <div className="modal-header">
-                                <h3>Connect with Patient</h3>
-                                <button 
-                                    className="close-btn" 
-                                    onClick={() => {
-                                        setShowConnectModal(false);
-                                        setPatientEmail('');
-                                        setConnectionStatus(null);
-                                        setFoundPatient(null);
-                                    }}
-                                    disabled={isLoading}
-                                >
-                                    <X size={20} />
-                                </button>
-                            </div>
-                            <form onSubmit={handleSearchPatient} className="connect-form">
-                                <div className="form-group">
-                                    <label htmlFor="patientEmail">Patient's Email</label>
-                                    <div className="search-container">
-                                        <input
-                                            type="email"
-                                            id="patientEmail"
-                                            placeholder="Enter patient's email address"
-                                            value={patientEmail}
-                                            onChange={(e) => setPatientEmail(e.target.value)}
-                                            required
-                                            disabled={isLoading || !!foundPatient}
-                                        />
-                                        <button 
-                                            type="submit" 
-                                            className="search-btn"
-                                            disabled={isLoading || !patientEmail.trim() || !!foundPatient}
-                                        >
-                                            {isLoading ? <Loader2 className="animate-spin" /> : <Search size={18} />}
-                                        </button>
-                                    </div>
-                                </div>
-                                
-                                {foundPatient && (
-                                    <div className="patient-found">
-                                        <div className="patient-info">
-                                            <div className="patient-avatar">
-                                                {foundPatient.name.charAt(0)}
-                                            </div>
-                                            <div>
-                                                <h4>{foundPatient.name}</h4>
-                                                <p>{foundPatient.email}</p>
-                                                <p className="text-sm text-gray-600">{foundPatient.condition}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                                
-                                {connectionStatus && (
-                                    <div className={`status-message ${connectionStatus.success ? 'success' : 'error'}`}>
-                                        {connectionStatus.message}
-                                    </div>
-                                )}
-                                
-                                <div className="modal-actions">
-                                    <button 
-                                        type="button" 
-                                        className="btn btn-outline" 
-                                        onClick={() => {
-                                            setShowConnectModal(false);
-                                            setPatientEmail('');
-                                            setConnectionStatus(null);
-                                            setFoundPatient(null);
-                                        }}
-                                        disabled={isLoading}
-                                    >
-                                        Cancel
-                                    </button>
-                                    
-                                    {foundPatient ? (
-                                        <button 
-                                            type="button" 
-                                            className="btn btn-primary"
-                                            onClick={handleSendRequest}
-                                            disabled={isLoading}
-                                        >
-                                            {isLoading ? (
-                                                <>
-                                                    <Loader2 className="animate-spin mr-2" size={18} />
-                                                    Sending...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <UserPlus className="mr-2" size={18} />
-                                                    Send Request
-                                                </>
-                                            )}
-                                        </button>
-                                    ) : (
-                                        <button 
-                                            type="submit" 
-                                            className="btn btn-primary"
-                                            disabled={isLoading || !patientEmail.trim()}
-                                        >
-                                            {isLoading ? (
-                                                <Loader2 className="animate-spin mr-2" size={18} />
-                                            ) : (
-                                                <Search className="mr-2" size={18} />
-                                            )}
-                                            Search Patient
-                                        </button>
-                                    )}
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
 };
 
-export default Patients;
+                export default Patients;
