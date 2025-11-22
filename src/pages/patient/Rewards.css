@@ -1,0 +1,237 @@
+.level-card {
+    background: linear-gradient(135deg, var(--primary-600), var(--primary-800));
+    color: white;
+    padding: var(--spacing-2xl);
+    margin-bottom: var(--spacing-3xl);
+    position: relative;
+    overflow: hidden;
+}
+
+.level-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 70%);
+    border-radius: 50%;
+}
+
+.level-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-xl);
+    position: relative;
+    z-index: 1;
+}
+
+.level-badge {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.level-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    opacity: 0.9;
+}
+
+.level-number {
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.points-info h3 {
+    font-size: 1.5rem;
+    margin: 0 0 var(--spacing-xs) 0;
+}
+
+.points-info p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 1.125rem;
+}
+
+.level-progress-container {
+    position: relative;
+    z-index: 1;
+}
+
+.progress-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-xs);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.main-progress-bar {
+    height: 16px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.main-progress-fill {
+    height: 100%;
+    background: var(--secondary-400);
+    border-radius: var(--radius-full);
+    position: relative;
+    transition: width 1s ease-out;
+}
+
+.shimmer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(255, 255, 255, 0.4),
+            transparent);
+    transform: skewX(-20deg);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%) skewX(-20deg);
+    }
+
+    100% {
+        transform: translateX(200%) skewX(-20deg);
+    }
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    color: white;
+    font-size: 1.5rem;
+    margin-bottom: var(--spacing-xl);
+}
+
+.badges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--spacing-lg);
+}
+
+.badge-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background: white;
+    border-radius: var(--radius-xl);
+    transition: all var(--transition-base);
+}
+
+.badge-card.locked {
+    opacity: 0.7;
+    background: var(--neutral-100);
+}
+
+.badge-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.badge-icon-container {
+    width: 64px;
+    height: 64px;
+    background: var(--neutral-100);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.badge-card.earned .badge-icon-container {
+    background: var(--warning-100);
+}
+
+.badge-icon {
+    font-size: 2rem;
+}
+
+.lock-overlay {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    background: var(--neutral-600);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+}
+
+.badge-content h3 {
+    margin: 0 0 var(--spacing-xs) 0;
+    font-size: 1.125rem;
+    color: var(--neutral-900);
+}
+
+.badge-content p {
+    margin: 0 0 var(--spacing-sm) 0;
+    font-size: 0.875rem;
+    color: var(--neutral-600);
+    line-height: 1.4;
+}
+
+.earned-date {
+    font-size: 0.75rem;
+    color: var(--success);
+    font-weight: 600;
+}
+
+.badge-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: 0.75rem;
+    color: var(--neutral-600);
+    font-weight: 600;
+}
+
+.mini-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--neutral-200);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.mini-progress-fill {
+    height: 100%;
+    background: var(--primary-500);
+    border-radius: var(--radius-full);
+}
+
+@media (max-width: 600px) {
+    .level-info {
+        flex-direction: column;
+        text-align: center;
+    }
+}
