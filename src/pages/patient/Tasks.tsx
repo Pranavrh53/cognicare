@@ -1,35 +1,94 @@
 import React, { useState, useEffect } from 'react';
 import Navigation from '../../components/common/Navigation';
 import { CheckCircle, Circle, Clock, AlertCircle } from 'lucide-react';
-import { dataService } from '../../services/mockDataService';
-import type { Task } from '../../services/mockDataService';
+import { useAuth } from '../../contexts/AuthContext';
+import { isPatientUser } from '../../types/user';
+import type { Task } from '../../types/task';
+import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import './Tasks.css';
 
 const Tasks: React.FC = () => {
+    const { currentUser } = useAuth();
     const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('all');
     const [tasks, setTasks] = useState<Task[]>([]);
     const [points, setPoints] = useState(0);
 
     useEffect(() => {
         loadTasks();
-    }, []);
+    }, [currentUser]);
 
-    const loadTasks = () => {
-        // In a real app, we'd get the current user ID from auth
-        // For demo, we assume we are 'p1'
-        const patientTasks = dataService.getTasksForPatient('p1');
-        setTasks(patientTasks);
+    const loadTasks = async () => {
+        if (!currentUser || !isPatientUser(currentUser)) return;
 
-        // Calculate total points from completed tasks
-        const totalPoints = patientTasks
-            .filter(t => t.completed)
-            .reduce((acc, t) => acc + t.points, 0);
-        setPoints(totalPoints);
+        try {
+            // Load tasks assigned to this patient
+            const tasksQuery = query(
+                collection(db, 'tasks'),
+                where('patientId', '==', currentUser.id)
+            );
+
+            const tasksSnapshot = await getDocs(tasksQuery);
+            const tasksData: Task[] = [];
+
+            tasksSnapshot.forEach((doc) => {
+                const data = doc.data();
+                tasksData.push({
+                    id: doc.id,
+                    ...data,
+                    dueDate: data.dueDate?.toDate() || new Date(),
+                    completedAt: data.completedAt?.toDate(),
+                    createdAt: data.createdAt?.toDate() || new Date(),
+                    updatedAt: data.updatedAt?.toDate() || new Date()
+                } as Task);
+            });
+
+            // Sort by due date
+            tasksData.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+            setTasks(tasksData);
+
+            // Calculate total points from completed tasks
+            const totalPoints = tasksData
+                .filter(t => t.completed)
+                .reduce((acc, t) => acc + t.points, 0);
+            setPoints(totalPoints);
+
+        } catch (error) {
+            console.error('Error loading tasks:', error);
+        }
     };
 
-    const toggleTask = (taskId: string) => {
-        dataService.toggleTaskCompletion(taskId);
-        loadTasks(); // Refresh state
+    const toggleTask = async (taskId: string) => {
+        try {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            const taskRef = doc(db, 'tasks', taskId);
+            const newCompletedStatus = !task.completed;
+
+            await updateDoc(taskRef, {
+                completed: newCompletedStatus,
+                completedAt: newCompletedStatus ? serverTimestamp() : null,
+                updatedAt: serverTimestamp()
+            });
+
+            // Update local state
+            setTasks(tasks.map(t =>
+                t.id === taskId
+                    ? { ...t, completed: newCompletedStatus, completedAt: newCompletedStatus ? new Date() : undefined }
+                    : t
+            ));
+
+            // Update points
+            if (newCompletedStatus) {
+                setPoints(points + task.points);
+            } else {
+                setPoints(points - task.points);
+            }
+
+        } catch (error) {
+            console.error('Error toggling task:', error);
+        }
     };
 
     const filteredTasks = tasks.filter(task => {
@@ -41,10 +100,21 @@ const Tasks: React.FC = () => {
 
     const getPriorityColor = (priority: string) => {
         switch (priority) {
-            case 'high': return 'var(--error)';
-            case 'medium': return 'var(--warning)';
-            case 'low': return 'var(--success)';
-            default: return 'var(--neutral-400)';
+            case 'high': return '#ef4444';
+            case 'medium': return '#f59e0b';
+            case 'low': return '#10b981';
+            default: return '#6b7280';
+        }
+    };
+
+    const getCategoryIcon = (category: string) => {
+        switch (category) {
+            case 'medication': return '💊';
+            case 'exercise': return '🏃';
+            case 'mental': return '🧠';
+            case 'social': return '👥';
+            case 'diet': return '🥗';
+            default: return '📋';
         }
     };
 
@@ -86,7 +156,11 @@ const Tasks: React.FC = () => {
                         <div className="empty-state">
                             <CheckCircle size={48} />
                             <h3>No tasks found</h3>
-                            <p>You're all caught up!</p>
+                            <p>
+                                {filter === 'all' && "Your caregiver hasn't assigned any tasks yet."}
+                                {filter === 'pending' && "You're all caught up!"}
+                                {filter === 'completed' && "No completed tasks yet. Start completing tasks to earn points!"}
+                            </p>
                         </div>
                     ) : (
                         filteredTasks.map((task) => (
@@ -100,7 +174,9 @@ const Tasks: React.FC = () => {
 
                                 <div className="task-content">
                                     <div className="task-header-row">
-                                        <span className="task-category">{task.category}</span>
+                                        <span className="task-category">
+                                            {getCategoryIcon(task.category)} {task.category}
+                                        </span>
                                         <span
                                             className="task-priority"
                                             style={{ color: getPriorityColor(task.priority) }}
@@ -116,10 +192,18 @@ const Tasks: React.FC = () => {
                                     <div className="task-footer">
                                         <div className="task-meta">
                                             <Clock size={16} />
-                                            <span>Due: {new Date(task.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span>
+                                                Due: {task.dueDate.toLocaleDateString()} at {task.dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
                                         </div>
                                         <span className="task-points">+{task.points} pts</span>
                                     </div>
+
+                                    {task.completed && task.completedAt && (
+                                        <div className="completed-badge">
+                                            ✓ Completed on {task.completedAt.toLocaleDateString()}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))

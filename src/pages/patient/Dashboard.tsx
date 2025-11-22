@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import Navigation from '../../components/common/Navigation';
 import { Brain, Trophy, Calendar, Activity, Play, CheckCircle, UserPlus, X, Check } from 'lucide-react';
-import { dataService } from '../../services/mockDataService';
-import type { Task, ConnectionRequest } from '../../services/mockDataService';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPatientUser } from '../../types/user';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import type { CaregiverRequest } from '../../types/notifications';
 import './Dashboard.css';
 
 const Dashboard: React.FC = () => {
+    const { currentUser, respondToCaregiverRequest } = useAuth();
     const [stats, setStats] = useState({
         points: 0,
         totalPoints: 0,
@@ -16,39 +18,62 @@ const Dashboard: React.FC = () => {
         completionRate: 0
     });
 
-    const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
-    const [pendingRequests, setPendingRequests] = useState<ConnectionRequest[]>([]);
-    const { currentUser } = useAuth();
+    const [upcomingTasks, setUpcomingTasks] = useState<any[]>([]);
+    const [pendingRequests, setPendingRequests] = useState<CaregiverRequest[]>([]);
 
     useEffect(() => {
         loadDashboardData();
-    }, []);
+    }, [currentUser]);
 
-    const loadDashboardData = () => {
-        // Load data for demo patient 'p1'
-        const patientStats = dataService.getPatientDashboardStats('p1');
-        setStats(patientStats);
+    const loadDashboardData = async () => {
+        if (!currentUser || !isPatientUser(currentUser)) return;
 
-        const tasks = dataService.getTasksForPatient('p1');
-        const pending = tasks
-            .filter(t => !t.completed)
-            .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-            .slice(0, 3);
+        // Load patient stats (you can implement this later with real data)
+        setStats({
+            points: currentUser.points || 0,
+            totalPoints: currentUser.points || 0,
+            level: currentUser.level || 1,
+            streak: 3, // Mock value
+            completionRate: 0 // Calculate from tasks later
+        });
 
-        setUpcomingTasks(pending);
+        // Load pending caregiver requests from Firestore
+        try {
+            const requestsQuery = query(
+                collection(db, 'caregiverRequests'),
+                where('patientId', '==', currentUser.id),
+                where('status', '==', 'pending')
+            );
 
-        // Get connection info (mocking fetching current user 'p1')
-        // In real app, this comes from auth/user context
-        const requests = dataService.getPendingRequests('p1');
-        setPendingRequests(requests);
+            const querySnapshot = await getDocs(requestsQuery);
+            const requests: CaregiverRequest[] = [];
 
-        // Get connection code from user profile
-        // No need to set it in state as we'll use it directly from currentUser
+            querySnapshot.forEach((doc) => {
+                requests.push({
+                    id: doc.id,
+                    ...doc.data(),
+                    createdAt: doc.data().createdAt?.toDate() || new Date(),
+                    updatedAt: doc.data().updatedAt?.toDate() || new Date()
+                } as CaregiverRequest);
+            });
+
+            setPendingRequests(requests);
+        } catch (error) {
+            console.error('Error loading caregiver requests:', error);
+        }
+
+        // TODO: Load tasks from Firestore
+        setUpcomingTasks([]);
     };
 
-    const handleRequest = (requestId: string, accept: boolean) => {
-        dataService.respondToRequest(requestId, accept);
-        loadDashboardData(); // Refresh to remove request from list
+    const handleRequest = async (requestId: string, accept: boolean) => {
+        try {
+            await respondToCaregiverRequest(requestId, accept);
+            // Refresh dashboard to remove the request
+            await loadDashboardData();
+        } catch (error) {
+            console.error('Error responding to request:', error);
+        }
     };
 
     return (
