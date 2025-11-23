@@ -12,8 +12,7 @@ const Login: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [showRoleModal, setShowRoleModal] = useState(false);
     const { login, signInWithGoogle } = useAuth();
-
-
+ //s
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
